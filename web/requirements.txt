@@ -1,0 +1,5 @@
+# Ranges rather than exact pins so security patches land on a rebuild, with a
+# major-version ceiling so an upgrade cannot break the app unattended.
+fastapi>=0.115.6,<1.0
+uvicorn[standard]>=0.34,<1.0
+jinja2>=3.1.5,<4

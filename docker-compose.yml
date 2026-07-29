@@ -1,0 +1,118 @@
+# Grand Junction / Mesa County P25 scanner + GPU transcription stack.
+#
+# Four services:
+#   trunk-recorder  records calls from the Airspy off the Colorado DTRS site
+#   transcriber     transcribes each call with Whisper on the GPU, posts to Discord
+#   web             searchable transcript feed          -> http://<server>:8080
+#   rdio-scanner    scanner-style listening interface   -> http://<server>:3000
+#
+# Start everything:  docker compose up -d
+# Watch the logs:    docker compose logs -f
+#
+# See README.md. If this is your first time, do NOT run this yet — walk through
+# docs/02-server-setup.md first (Docker + NVIDIA drivers + USB permissions).
+
+services:
+  trunk-recorder:
+    image: robotastic/trunk-recorder:latest
+    container_name: trunk-recorder
+    restart: unless-stopped
+
+    # The Airspy is a USB device. Trunk Recorder needs raw USB access to talk to
+    # it, which is what these two lines grant. This is how the official Trunk
+    # Recorder Docker docs do it.
+    privileged: true
+    devices:
+      - "/dev/bus/usb:/dev/bus/usb:rwm"
+
+    # Trunk Recorder assembles calls in /dev/shm (a RAM disk) before writing the
+    # finished file to disk. Docker's default /dev/shm is only 64 MB, which is
+    # tight once several channels record at once.
+    shm_size: 512m
+
+    environment:
+      TZ: ${TZ:-America/Denver}
+
+    volumes:
+      # Your settings. Mounted read-only: nothing in the container can change
+      # them, and editing them on the host is immediately visible here.
+      - ./config/trunk-recorder:/app/config:ro
+      # Recorded audio + per-call JSON. Shared with the transcriber and web UI.
+      - ./media:/app/media
+      - ./logs:/app/logs
+
+    command: trunk-recorder --config=/app/config/config.json
+
+    depends_on:
+      - rdio-scanner
+
+  transcriber:
+    build: ./transcriber
+    container_name: transcriber
+    restart: unless-stopped
+
+    environment:
+      TZ: ${TZ:-America/Denver}
+    env_file:
+      # required:false so the stack still starts if you have not made a .env
+      # yet — everything falls back to the defaults baked into the code.
+      - path: .env
+        required: false
+
+    volumes:
+      - ./media:/media                 # read calls, write transcript sidecars
+      - ./data:/data                   # SQLite database
+      - ./models:/models               # cached Whisper weights (~3 GB, downloaded once)
+      - ./config:/config:ro            # discord.json routing rules
+
+    # --- GPU ---------------------------------------------------------------
+    # Requires the NVIDIA Container Toolkit on the host. If you have not set
+    # that up yet, see docs/02-server-setup.md — this is the step people most
+    # often get stuck on.
+    #
+    # No GPU? Comment out this whole `deploy:` block and set
+    # WHISPER_DEVICE=cpu and WHISPER_MODEL=small in your .env file.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  web:
+    build: ./web
+    container_name: transcript-web
+    restart: unless-stopped
+
+    environment:
+      TZ: ${TZ:-America/Denver}
+    env_file:
+      # required:false so the stack still starts if you have not made a .env
+      # yet — everything falls back to the defaults baked into the code.
+      - path: .env
+        required: false
+
+    ports:
+      # Change WEB_BIND to 127.0.0.1 in .env to restrict this to the server
+      # itself. Never port-forward this to the internet — see README.md.
+      - "${WEB_BIND:-0.0.0.0}:${WEB_PORT:-8080}:8080"
+
+    volumes:
+      - ./media:/media:ro
+      - ./data:/data                   # needs write access for SQLite WAL files,
+                                       # but the app opens the DB in query-only mode
+
+  rdio-scanner:
+    image: chuot/rdio-scanner:latest
+    container_name: rdio-scanner
+    restart: unless-stopped
+
+    environment:
+      TZ: ${TZ:-America/Denver}
+
+    ports:
+      - "${RDIO_BIND:-0.0.0.0}:${RDIO_PORT:-3000}:3000"
+
+    volumes:
+      - ./rdio-data:/app/data

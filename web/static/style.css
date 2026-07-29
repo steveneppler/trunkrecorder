@@ -1,0 +1,162 @@
+:root {
+  /* Makes the browser render its own controls (the audio player, the select,
+     scrollbars) in dark mode so they do not glare against the page. */
+  color-scheme: dark;
+
+  --bg: #101418;
+  --panel: #171d23;
+  --panel-edge: #232c35;
+  --text: #e6edf3;
+  --muted: #8b98a5;
+  --accent: #4f9ae0;
+  --emergency: #e04b2f;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--panel);
+  border-bottom: 1px solid var(--panel-edge);
+  padding: 1rem 1.25rem;
+}
+
+.masthead h1 {
+  margin: 0;
+  font-size: 1.15rem;
+  letter-spacing: 0.01em;
+}
+
+.sub {
+  margin: 0.2rem 0 0.9rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.sub a { color: var(--accent); }
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.filters input[type="search"] {
+  flex: 1 1 20rem;
+  min-width: 0;
+}
+
+.filters input,
+.filters select,
+.filters button {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--panel-edge);
+  border-radius: 6px;
+  padding: 0.5rem 0.65rem;
+  font: inherit;
+}
+
+.filters button {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #06121d;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.filters .clear {
+  align-self: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+main {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 1rem 1.25rem 4rem;
+}
+
+.notice,
+.empty {
+  color: var(--muted);
+  font-size: 0.9rem;
+  background: var(--panel);
+  border: 1px solid var(--panel-edge);
+  border-radius: 8px;
+  padding: 0.75rem 0.9rem;
+}
+
+.call {
+  background: var(--panel);
+  border: 1px solid var(--panel-edge);
+  border-radius: 8px;
+  padding: 0.8rem 0.95rem;
+  margin-bottom: 0.7rem;
+}
+
+.call.emergency { border-color: var(--emergency); }
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.55rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.meta .time {
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.meta .tg {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.meta .tgid,
+.meta .group,
+.meta .duration {
+  font-variant-numeric: tabular-nums;
+}
+
+.badge {
+  background: var(--emergency);
+  color: #fff;
+  border-radius: 4px;
+  padding: 0.05rem 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.transcript {
+  margin: 0.45rem 0 0.6rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.transcript.muted {
+  color: var(--muted);
+  font-style: italic;
+}
+
+audio {
+  width: 100%;
+  height: 34px;
+}
+
+@media (max-width: 30rem) {
+  .filters button { flex: 1 1 auto; }
+}

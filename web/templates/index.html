@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Grand Junction Scanner Transcripts</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header>
+  <div class="masthead">
+    <h1>Grand Junction Scanner</h1>
+    <p class="sub">
+      {{ stats.transcribed }} transcribed of {{ stats.total }} recorded calls
+      &middot; <a href="http://{{ request.url.hostname }}:3000">listen in Rdio Scanner</a>
+    </p>
+  </div>
+
+  <form class="filters" method="get" action="/">
+    <input type="search" name="q" value="{{ q or '' }}"
+           placeholder="Search transcripts — try: structure fire" autocomplete="off">
+
+    <select name="group">
+      <option value="">All categories</option>
+      {% for g in groups %}
+        <option value="{{ g }}" {% if g == group %}selected{% endif %}>{{ g }}</option>
+      {% endfor %}
+    </select>
+
+    <button type="submit">Search</button>
+    {% if q or group or talkgroup %}
+      <a class="clear" href="/">Clear</a>
+    {% endif %}
+  </form>
+</header>
+
+<main>
+  {% if q or group or talkgroup %}
+    <p class="notice">
+      Showing filtered results. Live updates are paused while a filter is active.
+    </p>
+  {% endif %}
+
+  <div id="calls">
+    {% include "_calls.html" %}
+  </div>
+</main>
+
+<script>
+  // Live refresh. Only runs on the unfiltered view — refreshing a filtered or
+  // searched page out from under someone would be maddening.
+  const isLive = {{ 'false' if (q or group or talkgroup) else 'true' }};
+
+  async function refresh() {
+    // Never yank the list out while someone is listening to a call.
+    const playing = [...document.querySelectorAll('audio')].some(a => !a.paused);
+    if (playing) return;
+
+    try {
+      const response = await fetch('/calls', { headers: { 'Accept': 'text/html' } });
+      if (response.ok) {
+        document.getElementById('calls').innerHTML = await response.text();
+      }
+    } catch (err) {
+      // Server restarting or network blip — just try again next tick.
+    }
+  }
+
+  if (isLive) setInterval(refresh, 5000);
+</script>
+
+</body>
+</html>

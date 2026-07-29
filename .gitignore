@@ -1,0 +1,30 @@
+# Secrets — Discord webhook URLs and API keys live here. Never commit.
+.env
+
+# Recorded audio, transcripts, databases, logs — all runtime data.
+media/
+data/
+logs/
+
+# Rdio Scanner's SQLite database and config.
+rdio-data/
+
+# Cached Whisper model weights (several GB).
+models/
+
+# Local edits to the recorder config. See docs/03-first-run.md — the tracked
+# config.json is the starting point; copy it here if you want to keep local
+# tuning (gain, error, digitalRecorders) out of git.
+config/trunk-recorder/config.local.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/

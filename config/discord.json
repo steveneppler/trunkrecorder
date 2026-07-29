@@ -1,0 +1,12 @@
+{
+  "_README": "Which calls get posted to Discord, and to which channel. Full walkthrough in docs/06-discord.md. Webhook URLs are NOT stored here — this file only names the .env variable that holds each one, so it stays safe to commit to git. After editing, run: docker compose restart transcriber",
+
+  "min_duration_seconds": 1.5,
+  "skip_empty_transcripts": true,
+  "skip_encrypted": true,
+  "attach_audio": true,
+
+  "default_webhook_env": "DISCORD_WEBHOOK_URL",
+
+  "routes": []
+}

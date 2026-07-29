@@ -1,0 +1,6 @@
+# Whisper inference. CTranslate2 is pulled in as a dependency and is what
+# actually talks to the GPU.
+faster-whisper==1.1.1
+
+# Discord webhook posting.
+requests==2.32.3

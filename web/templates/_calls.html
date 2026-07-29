@@ -1,0 +1,27 @@
+{% if not calls %}
+  <p class="empty">
+    Nothing here yet. If Trunk Recorder just started, give it a minute — calls
+    show up as soon as they finish recording and get transcribed.
+  </p>
+{% endif %}
+
+{% for call in calls %}
+  <article class="call{% if call.emergency %} emergency{% endif %}">
+    <div class="meta">
+      <span class="time" title="{{ call.date_display }}">{{ call.time_display }}</span>
+      <span class="tg">{{ call.label }}</span>
+      <span class="tgid">{{ call.talkgroup }}</span>
+      {% if call.talkgroup_group %}
+        <span class="group">{{ call.talkgroup_group }}</span>
+      {% endif %}
+      <span class="duration">{{ call.duration_display }}</span>
+      {% if call.emergency %}<span class="badge">EMERGENCY</span>{% endif %}
+    </div>
+
+    <p class="transcript{% if call.body_muted %} muted{% endif %}">{{ call.body }}</p>
+
+    {% if call.has_audio %}
+      <audio controls preload="none" src="/audio/{{ call.id }}"></audio>
+    {% endif %}
+  </article>
+{% endfor %}

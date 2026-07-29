@@ -1,0 +1,68 @@
+{
+  "_README": "Settings for the Colorado DTRS site covering Grand Junction / Mesa County. JSON does not allow comments, so every value here is explained in docs/03-first-run.md. The five you may need to change are marked there. After editing, run: docker compose restart trunk-recorder",
+
+  "ver": 2,
+
+  "captureDir": "/app/media",
+  "tempDir": "/dev/shm",
+  "logFile": true,
+  "logDir": "/app/logs",
+  "frequencyFormat": "mhz",
+  "callTimeout": 3,
+
+  "sources": [
+    {
+      "driver": "osmosdr",
+      "device": "airspy",
+
+      "center": 852503125,
+      "rate": 10000000,
+
+      "error": -3069,
+      "autoTune": true,
+
+      "agc": false,
+      "gainSettings": {
+        "LNA": 12,
+        "MIX": 8,
+        "IF": 10
+      },
+
+      "digitalRecorders": 6
+    }
+  ],
+
+  "systems": [
+    {
+      "shortName": "gjdtrs",
+      "type": "p25",
+      "modulation": "qpsk",
+
+      "control_channels": [852562500],
+
+      "talkgroupsFile": "/app/config/talkgroups.csv",
+      "recordUnknown": true,
+      "hideEncrypted": true,
+
+      "compressWav": true,
+      "audioArchive": true,
+      "callLog": true,
+      "minDuration": 0.7
+    }
+  ],
+
+  "plugins": [
+    {
+      "name": "rdioscanner_uploader",
+      "library": "librdioscanner_uploader.so",
+      "server": "http://rdio-scanner:3000",
+      "systems": [
+        {
+          "shortName": "gjdtrs",
+          "systemId": 1,
+          "apiKey": "CHANGE_ME"
+        }
+      ]
+    }
+  ]
+}
