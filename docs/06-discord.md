@@ -122,9 +122,9 @@ the route uses `default_webhook_env`.
 | Setting | What it does |
 | --- | --- |
 | `min_duration_seconds` | Skip calls shorter than this. Short calls are usually radio clicks. |
-| `skip_empty_transcripts` | Do not post calls where nothing was said. Recommended. |
+| `skip_empty_transcripts` | Do not post calls where nothing was said. Recommended — since the message *is* the transcript, a call with no speech has nothing to show but the audio. |
 | `skip_encrypted` | Do not post encrypted calls (there is nothing to hear anyway). |
-| `attach_audio` | Attach the audio file. Set `false` for text-only posts. |
+| `attach_audio` | Attach the audio file. Set `false` for text-only posts. Turning this off while `skip_empty_transcripts` is also off leaves nothing to post for silent calls — those are skipped rather than sent empty. |
 
 ---
 
@@ -140,9 +140,18 @@ On startup you should see:
 Discord publisher started (2 route(s))
 ```
 
-Then wait for a call on a routed talkgroup. It will appear in the channel with
-the talkgroup name, transcript, time, duration, unit IDs, frequency, and a
-playable audio clip. Emergency calls get a 🚨 in the title.
+Then wait for a call on a routed talkgroup. It will appear in the channel as
+**just the transcript**, with the audio attached as a playable clip:
+
+> Engine 1, Medic 3, respond to a structure fire, 2840 Orchard Avenue, cross of
+> 28 and a half Road, smoke showing from the second floor.
+>
+> 🔊 `8441-1785333627_853962500-call_1.m4a`
+
+No talkgroup label, no timestamp, no unit IDs — the channel already tells you
+what you are reading, and repeating it on every message just made the channel
+harder to skim. If you do route several talkgroups into one channel, the
+attachment's filename still starts with the talkgroup number.
 
 **If nothing appears:**
 
@@ -167,6 +176,9 @@ during a working incident can exceed that easily.
 - **Start with one or two talkgroups.** Dispatch channels are the interesting
   ones; tactical channels are high-volume and mostly context-free out of order.
 - **Split across channels.** Fire in one, law in another, roads in a third.
+  This matters more than it looks: the messages carry no talkgroup label, so the
+  channel is the only thing telling you whose traffic you are reading. Mixing
+  several talkgroups into one channel gives you an undifferentiated wall of text.
 - **Raise `min_duration_seconds`** to 2 or 3 to drop the short acknowledgements
   ("copy", "10-4") that make up much of the traffic.
 - **Leave `skip_empty_transcripts` on.**
