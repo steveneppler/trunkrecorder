@@ -148,10 +148,15 @@ the talkgroup's description as a footer — with the audio attached below:
 > ▏
 > ▏Engine 1, Medic 3, respond to a structure fire, 2840 Orchard Avenue, cross of
 > ▏28 and a half Road, smoke showing from the second floor.
+> ▏<sub>3 minutes ago</sub>
 > ▏
 > ▏*Grand Junction Fire dispatch*
 >
 > 🔊 `20260729-110120-8441-1.m4a`
+
+The "3 minutes ago" line is live — Discord counts it up in your client as the
+call ages, from "just now" onward, without anything being reposted. It also
+renders in each viewer's own timezone if they hover it.
 
 The attachment is renamed on upload to
 `YYYYMMDD-HHMMSS-TALKGROUP-CALLNUMBER`, in 24-hour local time — so files you
@@ -168,12 +173,18 @@ The stripe colour comes from the talkgroup's `Category` in
 EMS, orange for CDOT, grey for anything unrecognised. Calls flagged as an
 emergency by the radio system get a 🚨 in front of the header.
 
-There is deliberately **no time, duration, frequency, or unit ID**. Those used
-to sit in a row of four labelled boxes under every message, which cost four
-lines of channel height per call to restate things that are either already
-visible (Discord timestamps every message itself) or rarely wanted mid-read. If
-you want them, every call keeps its full metadata on the transcript page and in
-its JSON sidecar.
+There is deliberately **no duration, frequency, or unit ID**. Those used to sit
+in a row of four labelled boxes under every message, costing four lines of
+channel height per call to restate things rarely wanted mid-read. If you want
+them, every call keeps its full metadata on the transcript page and in its JSON
+sidecar.
+
+> **A note on where the timestamp sits.** It is the last line of the embed body
+> rather than part of the footer text, which looks like an odd choice until you
+> try the alternative: Discord does not parse `<t:...>` markdown inside footer
+> text, so putting it there renders the raw `<t:1785333627:R>` instead of a
+> time. Descriptions do parse it, and the `-#` subtext prefix makes the line
+> small and muted so it still reads as a footer.
 
 **If nothing appears:**
 

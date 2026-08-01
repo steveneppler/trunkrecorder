@@ -349,13 +349,13 @@ class DiscordPublisher:
     # -- message formatting --------------------------------------------------
 
     def _build_embed(self, record):
-        """Talkgroup header, coloured stripe, transcript, footer. No field row.
+        """Talkgroup header, coloured stripe, transcript, live age, footer.
 
-        The four inline fields this used to carry — time, duration, unit IDs,
-        frequency — are deliberately gone: they took four lines of channel space
-        per call to restate things that are either visible anyway (Discord
-        already timestamps every message) or rarely wanted while reading. What
-        is left identifies whose traffic this is and what was said.
+        No field row: the four inline fields this used to carry — time,
+        duration, unit IDs, frequency — took four lines of channel space per
+        call to restate things either visible anyway or rarely wanted while
+        reading. What is left identifies whose traffic this is, what was said,
+        and how long ago.
         """
         label = record["talkgroup_tag"] or f"Talkgroup {record['talkgroup']}"
         title = f"{label} ({record['talkgroup']})"
@@ -363,14 +363,33 @@ class DiscordPublisher:
             title = f"🚨 {title}"
 
         transcript = (record.get("transcript") or "").strip() or "_(no speech detected)_"
-        if len(transcript) > EMBED_DESCRIPTION_LIMIT:
-            transcript = transcript[: EMBED_DESCRIPTION_LIMIT - 1] + "…"
+
+        # A live "3 minutes ago" that each client keeps counting up on its own,
+        # without us reposting anything.
+        #
+        # It sits at the bottom of the description rather than in the footer
+        # because Discord does not parse <t:...> markdown in footer text - put it
+        # there and it renders literally as "<t:1785333627:R>". Descriptions do
+        # parse it. The "-#" prefix is subtext: small and muted, so the line
+        # reads as part of the footer even though it is technically body text.
+        stamp = ""
+        start = record.get("start_time")
+        if start:
+            try:
+                stamp = f"\n-# <t:{int(start)}:R>"
+            except (TypeError, ValueError):
+                stamp = ""
+
+        # Truncate against the space the timestamp leaves, not the whole limit.
+        budget = EMBED_DESCRIPTION_LIMIT - len(stamp)
+        if len(transcript) > budget:
+            transcript = transcript[: budget - 1] + "…"
 
         footer = record.get("talkgroup_description") or record.get("short_name") or ""
 
         embed = {
             "title": title[:256],
-            "description": transcript,
+            "description": transcript + stamp,
             "color": self._color_for(record),
         }
         if footer:
