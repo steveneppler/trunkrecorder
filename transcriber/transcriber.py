@@ -185,6 +185,9 @@ def build_record(call_key, meta, json_path, audio_path):
         "call_key": call_key,
         "short_name": meta.get("short_name"),
         "talkgroup": meta.get("talkgroup"),
+        # Not a database column — carried on the record so the Discord publisher
+        # can name its attachments. CallStore.insert() ignores extra keys.
+        "call_num": meta.get("call_num"),
         "talkgroup_tag": meta.get("talkgroup_tag") or "",
         "talkgroup_description": meta.get("talkgroup_description") or "",
         "talkgroup_group": meta.get("talkgroup_group") or "",

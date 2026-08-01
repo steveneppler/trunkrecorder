@@ -151,7 +151,17 @@ the talkgroup's description as a footer — with the audio attached below:
 > ▏
 > ▏*Grand Junction Fire dispatch*
 >
-> 🔊 `8441-1785333627_853962500-call_1.m4a`
+> 🔊 `20260729-110120-8441-1.m4a`
+
+The attachment is renamed on upload to
+`YYYYMMDD-HHMMSS-TALKGROUP-CALLNUMBER`, in 24-hour local time — so files you
+save out of Discord sort chronologically instead of by talkgroup. The call
+number keeps two calls that started in the same second on the same talkgroup
+apart. Files **on the server** keep Trunk Recorder's own naming; only the upload
+is renamed.
+
+The times come from the `TZ` setting in your `.env` (`America/Denver` by
+default), so a call at 11:01:20 in the evening is `230120`, not `110120`.
 
 The stripe colour comes from the talkgroup's `Category` in
 [`talkgroups.csv`](04-talkgroups.md) — red for Fire, blue for Law, green for

@@ -5,6 +5,12 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
+# The timezone database, so the TZ setting from .env resolves. Without it, call
+# times on the transcript page silently render in UTC.
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

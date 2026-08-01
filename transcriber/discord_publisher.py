@@ -220,7 +220,9 @@ class DiscordPublisher:
                     handle = open(audio_path, "rb")
                     files = {
                         "payload_json": (None, json.dumps(payload), "application/json"),
-                        "files[0]": (os.path.basename(audio_path), handle, "audio/mp4"),
+                        "files[0]": (self._attachment_name(record, audio_path),
+                                     handle,
+                                     self._audio_mime(audio_path)),
                     }
                     response = self._session.post(url, files=files, timeout=30)
                 else:
@@ -282,6 +284,35 @@ class DiscordPublisher:
         log.debug("no attachable audio for %s - posting text only",
                   record.get("call_key"))
         return None
+
+    @staticmethod
+    def _attachment_name(record, audio_path):
+        """Name the upload `YYYYMMDD-HHMMSS-TALKGROUP-CALLNUMBER.m4a`, local time.
+
+        Trunk Recorder's own filenames lead with the talkgroup and a unix
+        timestamp (`8441-1785333627_852562500-call_1.m4a`), which reads as
+        nothing at all in a Discord client. Leading with the date means saved
+        attachments sort chronologically, and the call number keeps two calls
+        that started in the same second on the same talkgroup distinct.
+        """
+        extension = os.path.splitext(audio_path)[1] or ".m4a"
+
+        start = record.get("start_time")
+        try:
+            # Local time, so it matches the clock the calls were heard on.
+            stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(int(start)))
+        except (TypeError, ValueError):
+            stamp = "unknown"
+
+        parts = [stamp, str(record.get("talkgroup") if record.get("talkgroup") is not None else "0")]
+        call_num = record.get("call_num")
+        if call_num is not None:
+            parts.append(str(call_num))
+        return "-".join(parts) + extension
+
+    @staticmethod
+    def _audio_mime(audio_path):
+        return "audio/wav" if audio_path.endswith(".wav") else "audio/mp4"
 
     # -- rate limiting -------------------------------------------------------
 

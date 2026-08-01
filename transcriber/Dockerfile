@@ -15,6 +15,10 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
       python3-pip \
       ffmpeg \
       ca-certificates \
+      # Without the timezone database, the TZ setting from .env cannot be
+      # resolved and everything silently falls back to UTC — log timestamps and,
+      # more visibly, the date in every Discord attachment filename.
+      tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
