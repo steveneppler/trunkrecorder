@@ -43,6 +43,17 @@ services:
 
     command: trunk-recorder --config=/app/config/config.json
 
+    # Trunk Recorder installs a handler for SIGINT only — it has none for
+    # SIGTERM, which is what `docker stop` sends by default. Because it runs as
+    # PID 1, the kernel ignores signals it has no handler for, so SIGTERM does
+    # nothing at all: every stop or restart waits out the full 10-second grace
+    # period and then gets SIGKILLed, which also truncates whatever call was
+    # recording at the time.
+    #
+    # SIGINT reaches its handler, which concludes in-flight calls and exits in
+    # well under a second.
+    stop_signal: SIGINT
+
     depends_on:
       - rdio-scanner
 
