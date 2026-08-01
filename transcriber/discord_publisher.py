@@ -27,10 +27,9 @@ import requests
 
 log = logging.getLogger("discord")
 
-# Discord's limits. A plain message's text caps at 2000 characters (an embed
-# description would allow 4096, but we do not use embeds). The upload cap is
-# what a server without a Nitro boost allows.
-MESSAGE_CONTENT_LIMIT = 2000
+# Discord's limits. The embed description cap is a hard API limit; the upload
+# cap is what a server without a Nitro boost allows.
+EMBED_DESCRIPTION_LIMIT = 4096
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 
 # Queue depth before we start dropping. If Discord is down we would rather lose
@@ -39,9 +38,25 @@ MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 MAX_QUEUE = 500
 
 # Transcripts are machine-generated from radio audio — nothing we control. Text
-# in a message body (unlike text in an embed) really does ping people, so every
-# post disables mention parsing outright rather than trusting the content.
+# inside an embed cannot ping anyone, so this is belt-and-braces, but it keeps
+# the message safe if anything is ever moved back into the message body.
 NO_MENTIONS = {"parse": []}
+
+# Embed stripe colour, chosen from the talkgroup's category or service tag.
+CATEGORY_COLORS = {
+    "fire": 0xE04B2F,
+    "ems": 0x2FA84F,
+    "emergency medical": 0x2FA84F,
+    "law": 0x2F6FE0,
+    "law dispatch": 0x2F6FE0,
+    "law tac": 0x2F6FE0,
+    "police": 0x2F6FE0,
+    "sheriff": 0x2F6FE0,
+    "cdot": 0xE0912F,
+    "transportation": 0xE0912F,
+    "public works": 0x8A6FE0,
+}
+DEFAULT_COLOR = 0x6B7280
 
 
 class DiscordPublisher:
@@ -190,18 +205,10 @@ class DiscordPublisher:
 
     def _post(self, url, record, attempts=4):
         payload = {
-            "content": self._build_content(record),
+            "embeds": [self._build_embed(record)],
             "allowed_mentions": NO_MENTIONS,
         }
         audio_path = self._audio_for(record)
-
-        # Discord rejects a message with neither text nor an attachment. Normally
-        # unreachable — skip_empty_transcripts stops empty calls earlier — but it
-        # is a user-settable option, so do not send a request that must fail.
-        if not payload["content"] and not audio_path:
-            log.debug("nothing to post for %s (no transcript, no audio)",
-                      record.get("call_key"))
-            return True
 
         for attempt in range(1, attempts + 1):
             self._wait_for_rate_limit(url)
@@ -310,17 +317,41 @@ class DiscordPublisher:
 
     # -- message formatting --------------------------------------------------
 
-    @staticmethod
-    def _build_content(record):
-        """The message body: the transcript, and nothing else.
+    def _build_embed(self, record):
+        """Talkgroup header, coloured stripe, transcript, footer. No field row.
 
-        No talkgroup label, no timestamp, no unit IDs. Routing puts each
-        talkgroup in its own channel, so the channel already says what this is;
-        repeating it on every message just made the channel harder to read. If
-        several talkgroups do share a channel, the attached audio file is named
-        after the talkgroup and time.
+        The four inline fields this used to carry — time, duration, unit IDs,
+        frequency — are deliberately gone: they took four lines of channel space
+        per call to restate things that are either visible anyway (Discord
+        already timestamps every message) or rarely wanted while reading. What
+        is left identifies whose traffic this is and what was said.
         """
-        transcript = (record.get("transcript") or "").strip()
-        if len(transcript) > MESSAGE_CONTENT_LIMIT:
-            transcript = transcript[: MESSAGE_CONTENT_LIMIT - 1] + "…"
-        return transcript
+        label = record["talkgroup_tag"] or f"Talkgroup {record['talkgroup']}"
+        title = f"{label} ({record['talkgroup']})"
+        if record.get("emergency"):
+            title = f"🚨 {title}"
+
+        transcript = (record.get("transcript") or "").strip() or "_(no speech detected)_"
+        if len(transcript) > EMBED_DESCRIPTION_LIMIT:
+            transcript = transcript[: EMBED_DESCRIPTION_LIMIT - 1] + "…"
+
+        footer = record.get("talkgroup_description") or record.get("short_name") or ""
+
+        embed = {
+            "title": title[:256],
+            "description": transcript,
+            "color": self._color_for(record),
+        }
+        if footer:
+            embed["footer"] = {"text": footer[:2048]}
+        return embed
+
+    @staticmethod
+    def _color_for(record):
+        for key in (record.get("talkgroup_group"), record.get("talkgroup_group_tag")):
+            if not key:
+                continue
+            colour = CATEGORY_COLORS.get(key.strip().lower())
+            if colour:
+                return colour
+        return DEFAULT_COLOR

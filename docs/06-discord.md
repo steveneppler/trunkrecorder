@@ -122,9 +122,9 @@ the route uses `default_webhook_env`.
 | Setting | What it does |
 | --- | --- |
 | `min_duration_seconds` | Skip calls shorter than this. Short calls are usually radio clicks. |
-| `skip_empty_transcripts` | Do not post calls where nothing was said. Recommended — since the message *is* the transcript, a call with no speech has nothing to show but the audio. |
+| `skip_empty_transcripts` | Do not post calls where nothing was said. Recommended — otherwise you get cards reading "_(no speech detected)_". |
 | `skip_encrypted` | Do not post encrypted calls (there is nothing to hear anyway). |
-| `attach_audio` | Attach the audio file. Set `false` for text-only posts. Turning this off while `skip_empty_transcripts` is also off leaves nothing to post for silent calls — those are skipped rather than sent empty. |
+| `attach_audio` | Attach the audio file. Set `false` for text-only cards. |
 
 ---
 
@@ -140,18 +140,30 @@ On startup you should see:
 Discord publisher started (2 route(s))
 ```
 
-Then wait for a call on a routed talkgroup. It will appear in the channel as
-**just the transcript**, with the audio attached as a playable clip:
+Then wait for a call on a routed talkgroup. It appears as a compact card — a
+coloured stripe down the left, the talkgroup as a header, the transcript, and
+the talkgroup's description as a footer — with the audio attached below:
 
-> Engine 1, Medic 3, respond to a structure fire, 2840 Orchard Avenue, cross of
-> 28 and a half Road, smoke showing from the second floor.
+> **▏GJ Fire Disp (8441)**
+> ▏
+> ▏Engine 1, Medic 3, respond to a structure fire, 2840 Orchard Avenue, cross of
+> ▏28 and a half Road, smoke showing from the second floor.
+> ▏
+> ▏*Grand Junction Fire dispatch*
 >
 > 🔊 `8441-1785333627_853962500-call_1.m4a`
 
-No talkgroup label, no timestamp, no unit IDs — the channel already tells you
-what you are reading, and repeating it on every message just made the channel
-harder to skim. If you do route several talkgroups into one channel, the
-attachment's filename still starts with the talkgroup number.
+The stripe colour comes from the talkgroup's `Category` in
+[`talkgroups.csv`](04-talkgroups.md) — red for Fire, blue for Law, green for
+EMS, orange for CDOT, grey for anything unrecognised. Calls flagged as an
+emergency by the radio system get a 🚨 in front of the header.
+
+There is deliberately **no time, duration, frequency, or unit ID**. Those used
+to sit in a row of four labelled boxes under every message, which cost four
+lines of channel height per call to restate things that are either already
+visible (Discord timestamps every message itself) or rarely wanted mid-read. If
+you want them, every call keeps its full metadata on the transcript page and in
+its JSON sidecar.
 
 **If nothing appears:**
 
@@ -175,10 +187,12 @@ during a working incident can exceed that easily.
 
 - **Start with one or two talkgroups.** Dispatch channels are the interesting
   ones; tactical channels are high-volume and mostly context-free out of order.
-- **Split across channels.** Fire in one, law in another, roads in a third.
-  This matters more than it looks: the messages carry no talkgroup label, so the
-  channel is the only thing telling you whose traffic you are reading. Mixing
-  several talkgroups into one channel gives you an undifferentiated wall of text.
+- **Split across channels.** Fire in one, law in another, roads in a third. Each
+  card names its talkgroup and is colour-coded by category, so a mixed channel is
+  still readable — but a channel per service is easier to follow at a glance.
+- **Turn off `attach_audio`** if the player rows make the channel feel cluttered.
+  The cards stay; you just listen on the transcript page or in Rdio Scanner
+  instead.
 - **Raise `min_duration_seconds`** to 2 or 3 to drop the short acknowledgements
   ("copy", "10-4") that make up much of the traffic.
 - **Leave `skip_empty_transcripts` on.**
