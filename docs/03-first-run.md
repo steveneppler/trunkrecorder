@@ -230,6 +230,11 @@ port 3000.
 4. Go to **API keys** and add a key. Give it any name. It generates a long
    random string — **copy it**.
 
+   **Then set what the key is allowed to upload.** A new key does not
+   automatically have access to anything, and this is the single most common
+   reason uploads fail. In the key's settings, set its system access to `*`
+   (everything), or explicitly add system `1` with talkgroups `*`. Save.
+
 5. Back on the server:
 
    ```bash
@@ -250,9 +255,31 @@ port 3000.
 
 6. Open `http://<your-server>:3000`. New calls should start appearing.
 
-If they do not, check `docker compose logs trunk-recorder` for
-`Rdio Scanner Upload Error` — that means the API key or system ID does not match
-what you set in the dashboard.
+If they do not, check `docker compose logs trunk-recorder`:
+
+```
+Rdio Scanner Upload Error (HTTP 401): Invalid API key for system 1 talkgroup 8976.
+Plugin Manager: call_end -  rdioscanner_uploader failed.
+```
+
+Rdio Scanner prints that same message for **two different problems**, so check
+both:
+
+- **The key does not match.** Confirm `"apiKey"` in `config.json` is not still
+  `CHANGE_ME`, and that you pasted the whole string with no stray spaces or
+  quotes.
+- **The key has no access to that system.** Even a correct key is rejected
+  unless its system access is set — step 4 above. This is the more common one,
+  because nothing in the dashboard warns you that a new key grants nothing.
+
+Also confirm the system in the dashboard really is ID `1`, matching
+`"systemId": 1` in `config.json`.
+
+This failure does **not** affect recording or transcription. Because
+`audioArchive` and `callLog` are both on, the `.wav`, `.m4a`, and `.json` are
+kept regardless of upload failures, so calls still reach the transcript page and
+Discord. Trunk Recorder retries each call twice more (about 2 and 4 minutes
+later) before giving up on the Rdio Scanner upload alone.
 
 > Talkgroups appear in Rdio Scanner automatically as they are heard, but you can
 > tidy up their names and grouping in the admin dashboard under **Talkgroups**.
