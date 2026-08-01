@@ -21,6 +21,7 @@ picked up automatically when it comes back.
 import json
 import logging
 import os
+import re
 import signal
 import sys
 import threading
@@ -165,6 +166,21 @@ def pick_audio_file(stem):
 
 # --- per-call handling ------------------------------------------------------
 
+_CALL_NUM_RE = re.compile(r"-call_(\d+)(?:\.|$)")
+
+
+def call_number_from_path(path):
+    """Pull Trunk Recorder's call number out of the filename.
+
+    Read from the name rather than the JSON on purpose: the released 5.2.x
+    images do not put `call_num` in the call JSON — that key only appears on
+    newer builds — but every version ends the filename with `-call_<n>`, and
+    the docs guarantee that suffix even when `filenameFormat` is customised.
+    """
+    match = _CALL_NUM_RE.search(os.path.basename(path))
+    return int(match.group(1)) if match else None
+
+
 def load_call_metadata(json_path):
     with open(json_path, "r", encoding="utf-8", errors="replace") as fh:
         return json.load(fh)
@@ -187,7 +203,9 @@ def build_record(call_key, meta, json_path, audio_path):
         "talkgroup": meta.get("talkgroup"),
         # Not a database column — carried on the record so the Discord publisher
         # can name its attachments. CallStore.insert() ignores extra keys.
-        "call_num": meta.get("call_num"),
+        "call_num": (meta.get("call_num")
+                     if meta.get("call_num") is not None
+                     else call_number_from_path(json_path)),
         "talkgroup_tag": meta.get("talkgroup_tag") or "",
         "talkgroup_description": meta.get("talkgroup_description") or "",
         "talkgroup_group": meta.get("talkgroup_group") or "",
