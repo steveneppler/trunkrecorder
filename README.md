@@ -64,10 +64,26 @@ git clone https://github.com/steveneppler/trunkrecorder.git
 cd trunkrecorder
 ```
 
-### 4. Create your settings file
+### 4. Create your settings files
+
+The repository ships `.example` copies of every file you are meant to edit. Make
+your own working copies:
 
 ```bash
 cp .env.example .env
+cp config/discord.json.example config/discord.json
+cp config/trunk-recorder/config.json.example config/trunk-recorder/config.json
+cp config/trunk-recorder/talkgroups.csv.example config/trunk-recorder/talkgroups.csv
+```
+
+Your copies are ignored by git, so a `git pull` can never overwrite your API
+key, radio tuning, talkgroup list, or Discord webhooks — and none of it can be
+accidentally pushed to GitHub. The `.example` files are the ones that get
+updated; yours are yours.
+
+Then open the main settings file:
+
+```bash
 nano .env
 ```
 

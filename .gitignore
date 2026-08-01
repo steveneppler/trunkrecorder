@@ -12,10 +12,13 @@ rdio-data/
 # Cached Whisper model weights (several GB).
 models/
 
-# Local edits to the recorder config. See docs/03-first-run.md — the tracked
-# config.json is the starting point; copy it here if you want to keep local
-# tuning (gain, error, digitalRecorders) out of git.
-config/trunk-recorder/config.local.json
+# Your settings. Each is created by copying the matching .example file, which
+# IS tracked. Keeping the live copies out of git means your API key, gain and
+# error tuning, talkgroup list, and Discord routes are never touched by a
+# `git pull` and never end up pushed to GitHub.
+config/discord.json
+config/trunk-recorder/config.json
+config/trunk-recorder/talkgroups.csv
 
 # Python
 __pycache__/

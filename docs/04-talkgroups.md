@@ -42,12 +42,16 @@ also how you find out what everything is.
    it down. Use the county filter for **Mesa** — or grab the categories you care
    about (Grand Junction, Mesa County, CDOT Region 3, Fire, Law, EMS).
 5. Click the **export / download** link to save it as a CSV file.
-6. Copy that file onto the server, replacing the shipped one:
+6. Copy that file onto the server, replacing your working copy:
 
    ```bash
    cp ~/Downloads/your-download.csv config/trunk-recorder/talkgroups.csv
    docker compose restart trunk-recorder
    ```
+
+   `talkgroups.csv` is git-ignored, so the list you build up here is yours and
+   survives every `git pull`. Only `talkgroups.csv.example` — the four-entry
+   starter — is tracked.
 
 RadioReference's export format is already what Trunk Recorder expects, with one
 exception — see [the Priority column](#the-priority-column) below.

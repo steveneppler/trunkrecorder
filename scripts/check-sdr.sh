@@ -18,13 +18,25 @@ PROBLEMS=0
 cd "$(dirname "$0")/.." || exit 1
 
 echo
-echo "0. Is your settings file in place?"
-if [ -f .env ]; then
-  ok "Found .env"
+echo "0. Are your settings files in place?"
+MISSING=""
+for f in .env \
+         config/discord.json \
+         config/trunk-recorder/config.json \
+         config/trunk-recorder/talkgroups.csv; do
+  [ -f "$f" ] || MISSING="$MISSING $f"
+done
+if [ -z "$MISSING" ]; then
+  ok "All four settings files exist"
 else
-  bad "No .env file yet."
-  note "Create it by copying the example:"
-  note "    cp .env.example .env"
+  bad "Missing:$MISSING"
+  note "Each is created by copying its .example. To make all of them at once:"
+  note "    for f in .env config/discord.json \\"
+  note "             config/trunk-recorder/config.json \\"
+  note "             config/trunk-recorder/talkgroups.csv; do"
+  note "      [ -f \"\$f\" ] || cp \"\$f.example\" \"\$f\""
+  note "    done"
+  note "(.env copies from .env.example — the same pattern.)"
 fi
 
 echo
