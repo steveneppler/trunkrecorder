@@ -32,6 +32,11 @@ services:
 
     environment:
       TZ: ${TZ:-America/Denver}
+      # Tuning for the health probe below. Listed here explicitly because this
+      # service has no `env_file:`, so without these two lines nothing you put
+      # in .env would ever reach the container. Defaults are in the script.
+      TR_HEALTH_MIN_RATIO: ${TR_HEALTH_MIN_RATIO:-40}
+      TR_HEALTH_MIN_THREADS: ${TR_HEALTH_MIN_THREADS:-20}
 
     volumes:
       # Your settings. Mounted read-only: nothing in the container can change
@@ -40,6 +45,9 @@ services:
       # Recorded audio + per-call JSON. Shared with the transcriber and web UI.
       - ./media:/app/media
       - ./logs:/app/logs
+      # The health probe used below. Mounted rather than baked into the image
+      # so that it travels with this repo and updates on `git pull`.
+      - ./scripts/trunk-recorder-healthcheck.sh:/opt/healthcheck.sh:ro
 
     command: trunk-recorder --config=/app/config/config.json
 
@@ -53,6 +61,33 @@ services:
     # SIGINT reaches its handler, which concludes in-flight calls and exits in
     # well under a second.
     stop_signal: SIGINT
+
+    # --- Is it still working? -----------------------------------------------
+    # Trunk Recorder can lose its SDR and keep running: the process stays up,
+    # the container stays up, and no calls are ever recorded again. A restart
+    # policy cannot catch that, because nothing ever exits. This probe notices,
+    # and the `autoheal` service at the bottom of this file acts on it.
+    #
+    # scripts/trunk-recorder-healthcheck.sh explains what it measures and why.
+    #
+    # Called through `sh` rather than directly so the probe works regardless of
+    # whether the execute bit survived however you got this repo onto the disk.
+    #
+    # start_period is the grace window while Trunk Recorder boots and opens the
+    # SDR; failures during it are not counted and do not mark the container
+    # unhealthy. It doubles as the anti-thrash guard — after any restart the
+    # container reports "starting" for three minutes, so autoheal leaves it
+    # alone long enough to come up properly.
+    healthcheck:
+      test: ["CMD", "/bin/sh", "/opt/healthcheck.sh"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 180s
+
+    # What autoheal looks for. Without this label it ignores the container.
+    labels:
+      autoheal: "true"
 
     depends_on:
       - rdio-scanner
@@ -127,3 +162,49 @@ services:
 
     volumes:
       - ./rdio-data:/app/data
+
+  # Watches for containers whose healthcheck has gone `unhealthy` and restarts
+  # them. Docker itself will not do this — a healthcheck only sets a status
+  # label, and `restart: unless-stopped` only reacts to a process exiting.
+  # Without something like this, a wedged Trunk Recorder shows up red in
+  # `docker compose ps` and stays that way until you notice.
+  #
+  # It only touches containers labelled `autoheal: "true"`, which right now is
+  # Trunk Recorder and nothing else.
+  #
+  # A restart issued from here goes through the Docker daemon, so it sends
+  # SIGINT (the `stop_signal` set above) and escalates to SIGKILL if that is
+  # ignored. That matters: a process wedged badly enough to ignore signals
+  # cannot be rescued from inside its own container, because the kernel will
+  # not deliver SIGKILL to a namespace's PID 1 from within that namespace.
+  #
+  # ---------------------------------------------------------------------------
+  # SECURITY: this mounts the Docker socket, which is the full Docker API, which
+  # is equivalent to root on the host — anything that can reach that socket can
+  # start a privileged container that mounts your whole filesystem. You are
+  # trusting the autoheal image. Mounting the socket `:ro` is common advice and
+  # does NOT help: the flag marks the bind mount read-only, it does not restrict
+  # what the API will do.
+  #
+  # If you would rather not accept that, delete this service and run the same
+  # check from the host instead — see docs/07-troubleshooting.md, "Recovering
+  # without the Docker socket".
+  # ---------------------------------------------------------------------------
+  autoheal:
+    image: willfarrell/autoheal:latest
+    container_name: autoheal
+    restart: unless-stopped
+
+    environment:
+      TZ: ${TZ:-America/Denver}
+      # Only restart containers carrying this label.
+      AUTOHEAL_CONTAINER_LABEL: autoheal
+      # How often to look, in seconds.
+      AUTOHEAL_INTERVAL: 30
+      # How long a restart waits for a clean exit before SIGKILL. Trunk
+      # Recorder's SIGINT handler finishes in well under a second; this is
+      # slack, not an expectation.
+      AUTOHEAL_DEFAULT_STOP_TIMEOUT: 15
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
