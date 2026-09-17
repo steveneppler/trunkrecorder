@@ -75,6 +75,143 @@ Frequencies for the site are on
 
 ---
 
+## It was recording, then quietly stopped
+
+This one is worth understanding, because it does not look like a failure.
+
+If the Airspy drops off USB for even a fraction of a second, Trunk Recorder
+does not crash and does not exit. It tears down its GNU Radio worker threads
+and keeps running — 0% CPU, no calls, no errors, container still "Up". It
+happened here on 2026-09-13 and went unnoticed for fifteen hours:
+
+```
+usb 1-5: USB disconnect, device number 2
+usb 1-5: new high-speed USB device number 3 using xhci_hcd
+```
+
+`restart: unless-stopped` cannot catch this. A restart policy reacts to a
+process **exiting**, and this process never exits.
+
+### What now watches for it
+
+Two pieces, both in `docker-compose.yml`:
+
+- a `healthcheck:` on `trunk-recorder` that runs
+  `scripts/trunk-recorder-healthcheck.sh` once a minute. It counts Trunk
+  Recorder's threads and fails when they collapse. A working recorder has one
+  thread per GNU Radio block — 209 on this machine — and a recorder that has
+  lost its SDR has almost none. It deliberately does **not** check "has a call
+  been recorded recently", because a quiet night is not a fault.
+- the `autoheal` service, which restarts any container whose healthcheck has
+  gone unhealthy. Docker will not do this on its own: a healthcheck only sets a
+  status label, and nothing acts on it.
+
+Expect recovery to take two to four minutes — three consecutive failed probes
+a minute apart, then the restart.
+
+### Checking on it
+
+```bash
+docker compose ps                    # look for (healthy) / (unhealthy)
+docker inspect --format '{{json .State.Health}}' trunk-recorder | jq
+```
+
+The last few probe results are kept there, so you can see what it measured.
+Your own healthy thread count:
+
+```bash
+docker exec trunk-recorder sh -c 'ls /proc/1/task | wc -l'
+```
+
+Restarts are logged by autoheal:
+
+```bash
+docker compose logs autoheal
+```
+
+### If it restarts when it should not
+
+The threshold is 40% of the highest thread count seen since the container
+started, so it adapts to your `digitalRecorders` setting rather than assuming
+this machine's numbers. If you still need to loosen it, set either of these in
+`.env`:
+
+```bash
+TR_HEALTH_MIN_RATIO=25     # percent of peak; default 40
+TR_HEALTH_MIN_THREADS=12   # hard floor used before a peak is established; default 20
+```
+
+Then `docker compose up -d trunk-recorder`. The script explains both in its
+header comment.
+
+### Recovering without the Docker socket
+
+`autoheal` mounts `/var/run/docker.sock`. That socket is the full Docker API,
+which is equivalent to root on the host — anything that can reach it can start
+a privileged container that mounts your entire filesystem. Mounting it `:ro`
+is commonly suggested and does not help; the flag applies to the bind mount,
+not to what the API will do.
+
+If you would rather not accept that, delete the `autoheal` service and run the
+same check from the host, where no container needs the socket at all:
+
+```bash
+sudo tee /usr/local/bin/trunk-recorder-watchdog >/dev/null <<'EOF'
+#!/bin/sh
+[ "$(docker inspect -f '{{.State.Health.Status}}' trunk-recorder 2>/dev/null)" = unhealthy ] \
+  && docker restart trunk-recorder
+exit 0
+EOF
+sudo chmod +x /usr/local/bin/trunk-recorder-watchdog
+
+sudo tee /etc/systemd/system/trunk-recorder-watchdog.service >/dev/null <<'EOF'
+[Unit]
+Description=Restart trunk-recorder when its healthcheck reports unhealthy
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/trunk-recorder-watchdog
+EOF
+
+sudo tee /etc/systemd/system/trunk-recorder-watchdog.timer >/dev/null <<'EOF'
+[Unit]
+Description=Check trunk-recorder health every minute
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1min
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now trunk-recorder-watchdog.timer
+```
+
+The `healthcheck:` block stays exactly as it is — only the thing acting on it
+changes. Confirm it is ticking with
+`systemctl list-timers trunk-recorder-watchdog.timer`.
+
+### Why the Airspy dropped in the first place
+
+Separately from recovering, it is worth fixing the cause. A disconnect and
+reconnect in the same second, on a device drawing the full 500 mA a USB 2 port
+allows, usually means power or the connector rather than software. Try a
+different port directly on the machine, a shorter or better cable, or a
+powered hub. Check whether it has happened before:
+
+```bash
+journalctl -k --since "7 days ago" | grep -i 'usb.*disconnect'
+```
+
+One isolated event in a month is bad luck. A pattern is hardware.
+
+---
+
 ## The audio is garbled or robotic
 
 This is reception quality, not a setting, and no amount of configuration fixes
