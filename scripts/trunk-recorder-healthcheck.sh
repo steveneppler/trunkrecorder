@@ -54,25 +54,32 @@
 #
 #     [gjdtrs]	852.562500 MHz	40 msg/sec
 #
-# This fails when every one of those lines in the last few minutes says 0.
+# This fails when none of those lines has been above 0 for several minutes.
 # That is not a quiet night: the control channel transmits continuously
 # whether or not anybody is talking, so a working recorder never reads 0.
 #
-# It ignores lines written before the current Trunk Recorder process started,
-# so the zeros that got a broken process restarted do not count against the
-# fresh one.
 #
-# If it finds no such lines at all — `logFile` turned off in config.json, or a
-# future Trunk Recorder version wording them differently — it skips this check
-# rather than failing, because failing would restart a working scanner every
-# few minutes forever.
-#
-#
-# 3. HAS IT GONE SILENT?
+# 3. HAS IT STOPPED REPORTING?
 #
 # Those status blocks are written every 200 seconds regardless of radio
-# traffic. If the log has not been written to for several minutes, Trunk
-# Recorder is wedged, whatever the reason.
+# traffic. If none has appeared for several minutes, Trunk Recorder is wedged,
+# whatever the reason.
+#
+#
+# HOW CHECKS 2 AND 3 READ THE LOG
+#
+# Each probe reads only what was added to the log since the previous one, and
+# remembers when it last saw a status line and when it last saw one above 0.
+# Those times come from this machine's clock, not from the timestamps in the
+# log, which have no UTC offset and so cannot be compared across a clock
+# change. Reading by position also means there is no line limit for a reading
+# to fall off the end of, however chatty the log level.
+#
+# Neither check does anything until a status line from the current process
+# has been seen. With `logFile` off, `logLevel` set above info, or a future
+# Trunk Recorder version that words those lines differently, none ever is, and
+# both are skipped rather than failing — failing would restart a working
+# scanner every few minutes forever. The thread check still runs.
 #
 #
 # The tunables below can be overridden in .env if you ever need to. You almost
@@ -91,13 +98,20 @@ RATIO="${TR_HEALTH_MIN_RATIO:-40}"
 # "fine" forever because its peak would be just as low as its current count.
 FLOOR="${TR_HEALTH_MIN_THREADS:-20}"
 
-# Checks 2 and 3: how far back to look, in seconds. Status blocks come every
-# 200 seconds, so the default of 600 always holds at least two of them.
+# Checks 2 and 3: how long, in seconds, without a status line above 0 msg/sec
+# (or without any status line) before failing. Status blocks come every 200
+# seconds, so the default of 600 always spans at least two of them.
 WINDOW="${TR_HEALTH_DECODE_WINDOW:-600}"
 
-# Survives for the life of the container and is thrown away on restart, which
-# is what we want: a fresh start should measure a fresh baseline.
+# Lives in /tmp, which keeps it for the life of the container — including
+# across `docker restart`, which stops and starts the same container rather
+# than recreating it. That is fine: the same hardware and config reach the
+# same peak after a restart.
 PEAK_FILE="${TR_HEALTH_PEAK_FILE:-/tmp/trunk-recorder-health.peak}"
+
+# Checks 2 and 3: where each probe leaves its place in the log and what it saw
+# for the next one.
+STATE_FILE="${TR_HEALTH_STATE_FILE:-/tmp/trunk-recorder-health.state}"
 
 # Where Trunk Recorder writes its log files: `logDir` in config.json.
 LOG_DIR="${TR_HEALTH_LOG_DIR:-/app/logs}"
@@ -108,7 +122,7 @@ LOG_DIR="${TR_HEALTH_LOG_DIR:-/app/logs}"
 PID="${TR_HEALTH_PID:-1}"
 
 # The current time, as seconds since 1970. Overridable for the same reason, so
-# that a clock change can be tested without waiting for one.
+# that a run of probes minutes apart can be tested without waiting for them.
 NOW="${TR_HEALTH_NOW:-}"
 
 # --- 1. Threads --------------------------------------------------------------
@@ -156,85 +170,62 @@ boot=$(awk '/^btime/ { print $2 }' /proc/stat 2>/dev/null)
 ticks=$(sed 's/.*) //' "/proc/$PID/stat" 2>/dev/null | awk '{ print $20 }')
 hz=$(getconf CLK_TCK 2>/dev/null || echo 100)
 case "$boot$ticks$hz" in
-  ''|*[!0-9]*) started="$now" ;;    # cannot tell; act as if it just started
+  ''|*[!0-9]*) started=unknown ;;
   *) started=$(( boot + ticks / hz )) ;;
 esac
-age=$(( now - started ))
 
-# Too young to have a full window of log behind it. start_period in
-# docker-compose.yml covers the first three minutes; this covers the rest.
-if [ "$age" -lt "$WINDOW" ]; then
-  echo "ok: $thread_status; started ${age}s ago, log checks begin at ${WINDOW}s"
-  exit 0
-fi
-
-# --- 3. Is it still writing its log? -----------------------------------------
+# --- What did the previous probe leave us? -----------------------------------
 #
-# Newest two files, because the log rotates at midnight and the brand-new file
-# may not have a status block in it yet.
+# The state belongs to one Trunk Recorder process. /tmp survives `docker
+# restart` — the container is stopped and started, not recreated — so a state
+# file from before a restart is still there, and is thrown away here because
+# its process start time does not match.
 
-logs=$(ls -1t "$LOG_DIR" 2>/dev/null | head -n 2)
+state() { awk -v k="$1" '$1 == k { print $2; exit }' "$STATE_FILE" 2>/dev/null; }
+offset_of() { awk -v f="$1" '$1 == "file" && $2 == f { print $3; exit }' "$STATE_FILE" 2>/dev/null; }
 
-if [ -z "$logs" ]; then
-  echo "ok: $thread_status; no log files in $LOG_DIR, control channel not checked"
-  exit 0
+fresh=1
+if [ "$(state started)" = "$started" ]; then
+  seen=$(state seen); last_status=$(state status); last_good=$(state good)
+  case "$seen$last_status$last_good" in
+    ''|*[!0-9]*) ;;               # unreadable or corrupt, start over
+    *) fresh=0 ;;
+  esac
+fi
+if [ "$fresh" -eq 1 ]; then
+  # Counting from now gives a new process a full WINDOW before it can fail.
+  seen=0; last_status=$now; last_good=$now
 fi
 
-newest="$LOG_DIR/$(echo "$logs" | head -n 1)"
-written=$(stat -c %Y "$newest" 2>/dev/null || echo "$now")
-
-# Files left over from before this process started say nothing about it, and
-# they are all there is if `logFile` has since been turned off. Treating them
-# as silence would restart a working recorder every few minutes, forever.
-# Trunk Recorder logs its banner the moment it starts, so with logging on the
-# newest file is always younger than the process.
-if [ "$written" -lt "$started" ]; then
-  echo "ok: $thread_status; nothing logged since this process started"
-  echo "(logFile off?), control channel not checked"
-  exit 0
-fi
-
-silent=$(( now - written ))
-
-if [ "$silent" -gt "$WINDOW" ]; then
-  echo "unhealthy: Trunk Recorder has written nothing to its log for ${silent}s"
-  echo "($newest). It writes a status block every 200s even when the radio is"
-  echo "quiet, so it is wedged."
-  exit 1
-fi
-
-# --- 2. Control channel decode rate ------------------------------------------
+# --- Read what the log gained since the previous probe -----------------------
 #
-# Log timestamps are local time in the form [2026-10-23 00:13:16.008160], which
-# sorts as text, so a plain string comparison against the cutoff works.
+# Newest two files, because the log rotates at midnight and the tail end of
+# the old file has not been read yet.
 #
-# Except across a clock change, because the timestamps carry no UTC offset. In
-# the autumn 01:00-02:00 happens twice, and for the first WINDOW seconds after
-# the clocks go back the cutoff reads 01:5x while the newest lines read 01:0x.
-# Those newest lines would be thrown away, hiding a recovery and possibly
-# restarting a recorder that is working. So while the window straddles a
-# change of offset, this check stands down. (For the rest of the repeated hour,
-# lines from the first pass through it count as recent too. That can delay a
-# restart but never cause one.)
-#
-# The process is at least WINDOW seconds old by now, so this cutoff also
-# excludes anything a previous process wrote.
+# A fresh state starts at the end of each file, so nothing a previous process
+# wrote is ever counted. A file the state has not seen before is new since the
+# previous probe, so it is read from the beginning.
 
-since=$(( now - WINDOW ))
-if [ "$(date -d "@$since" +%z)" != "$(date -d "@$now" +%z)" ]; then
-  echo "ok: $thread_status; clocks changed in the last ${WINDOW}s,"
-  echo "control channel not checked"
-  exit 0
-fi
-cutoff=$(date -d "@$since" '+%Y-%m-%d %H:%M:%S')
+reads=""
+for f in $(ls -1t "$LOG_DIR" 2>/dev/null | head -n 2); do
+  size=$(stat -c %s "$LOG_DIR/$f" 2>/dev/null) || continue
+  from=$(offset_of "$f")
+  if [ "$fresh" -eq 1 ]; then
+    from=$size
+  elif [ -z "$from" ] || [ "$from" -gt "$size" ]; then
+    from=0                        # new file, or it was truncated
+  fi
+  reads="$reads$f $from $size
+"
+done
 
 rates=$(
-  for f in $logs; do
-    tail -n 5000 "$LOG_DIR/$f" 2>/dev/null
-  done | awk -v cutoff="$cutoff" '
+  echo "$reads" | while read -r f from size; do
+    [ -n "$f" ] || continue
+    tail -c +$(( from + 1 )) "$LOG_DIR/$f" 2>/dev/null | head -c $(( size - from ))
+  done | awk '
     {
       gsub(/\033\[[0-9;]*m/, "")                    # strip colour codes
-      if (substr($0, 2, 19) < cutoff) next
       if (!match($0, /MHz[ \t]+[0-9]+ msg\/sec/)) next
       s = substr($0, RSTART, RLENGTH)
       sub(/^MHz[ \t]+/, "", s)
@@ -247,19 +238,49 @@ rates=$(
 readings=${rates% *}
 best=${rates#* }
 
-if [ "$readings" -eq 0 ]; then
-  echo "ok: $thread_status; no control channel status lines since $cutoff,"
-  echo "control channel not checked"
+[ "$readings" -gt 0 ] && { seen=1; last_status=$now; }
+[ "$best" -gt 0 ] && last_good=$now
+
+# Subshell for the same reason as the peak file. Written whole and then moved,
+# so a probe killed by its timeout cannot leave half a state behind.
+(
+  {
+    echo "started $started"
+    echo "seen $seen"
+    echo "status $last_status"
+    echo "good $last_good"
+    echo "$reads" | awk 'NF == 3 { print "file", $1, $3 }'
+  } > "$STATE_FILE.new" && mv "$STATE_FILE.new" "$STATE_FILE"
+) 2>/dev/null || true
+
+# --- 2 and 3. Decide ---------------------------------------------------------
+
+if [ "$seen" -eq 0 ]; then
+  echo "ok: $thread_status; no control channel status lines seen yet, so it"
+  echo "is not checked (they come every 200s at logLevel info, in $LOG_DIR)"
   exit 0
 fi
 
-if [ "$best" -eq 0 ]; then
-  echo "unhealthy: control channel decoded 0 msg/sec in all $readings status"
-  echo "lines since $cutoff. Trunk Recorder is running but has lost the control"
-  echo "channel, so it cannot record anything. A restart usually recovers it;"
-  echo "if it keeps happening, check the antenna and docs/07-troubleshooting.md."
+quiet=$(( now - last_status ))
+dead=$(( now - last_good ))
+
+if [ "$quiet" -gt "$WINDOW" ]; then
+  echo "unhealthy: no status block in Trunk Recorder's log for ${quiet}s. It"
+  echo "writes one every 200s even when the radio is quiet, so it is wedged."
   exit 1
 fi
 
-echo "ok: $thread_status; control channel up to $best msg/sec since $cutoff"
+if [ "$dead" -gt "$WINDOW" ]; then
+  echo "unhealthy: control channel has decoded 0 msg/sec for ${dead}s."
+  echo "Trunk Recorder is running but has lost the control channel, so it"
+  echo "cannot record anything. A restart usually recovers it; if it keeps"
+  echo "happening, check the antenna and docs/07-troubleshooting.md."
+  exit 1
+fi
+
+if [ "$best" -gt 0 ]; then
+  echo "ok: $thread_status; control channel at $best msg/sec"
+else
+  echo "ok: $thread_status; control channel last above 0 msg/sec ${dead}s ago"
+fi
 exit 0

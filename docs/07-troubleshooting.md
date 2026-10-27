@@ -112,16 +112,17 @@ Two pieces, both in `docker-compose.yml`:
   - Trunk Recorder's threads collapse. A working recorder has one thread per
     GNU Radio block — 209 on this machine — and one that has lost its SDR has
     almost none.
-  - every control channel status line in the last 10 minutes reads
-    `0 msg/sec`. The control channel transmits continuously whether or not
-    anyone is talking, so a working recorder never reads 0.
-  - Trunk Recorder has written nothing to its log for 10 minutes. It writes a
-    status block every 200 seconds even on a quiet radio.
+  - the control channel status lines have read `0 msg/sec` for 10 minutes.
+    The control channel transmits continuously whether or not anyone is
+    talking, so a working recorder never reads 0.
+  - no status block has appeared in the log for 10 minutes. Trunk Recorder
+    writes one every 200 seconds even on a quiet radio.
 
   It deliberately does **not** check "has a call been recorded recently",
   because a quiet night is not a fault. The log checks read the files in
-  `logs/`, so they need `"logFile": true` in `config.json` (the default here);
-  without it they are skipped and only the thread check runs.
+  `logs/`, so they need `"logFile": true` in `config.json` (the default here)
+  and `logLevel` left at `info` or below; otherwise they are skipped and only
+  the thread check runs.
 - the `autoheal` service, which restarts any container whose healthcheck has
   gone unhealthy. Docker will not do this on its own: a healthcheck only sets a
   status label, and nothing acts on it.
@@ -163,7 +164,7 @@ still need to loosen either, set any of these in `.env`:
 ```bash
 TR_HEALTH_MIN_RATIO=25         # percent of peak; default 40
 TR_HEALTH_MIN_THREADS=12       # hard floor used before a peak is established; default 20
-TR_HEALTH_DECODE_WINDOW=1200   # seconds of 0 msg/sec, or log silence, before failing; default 600
+TR_HEALTH_DECODE_WINDOW=1200   # seconds of 0 msg/sec, or no status block, before failing; default 600
 ```
 
 Then `docker compose up -d trunk-recorder`. The script explains all three in
