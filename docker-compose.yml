@@ -33,10 +33,11 @@ services:
     environment:
       TZ: ${TZ:-America/Denver}
       # Tuning for the health probe below. Listed here explicitly because this
-      # service has no `env_file:`, so without these two lines nothing you put
-      # in .env would ever reach the container. Defaults are in the script.
+      # service has no `env_file:`, so without these lines nothing you put in
+      # .env would ever reach the container. Defaults are in the script.
       TR_HEALTH_MIN_RATIO: ${TR_HEALTH_MIN_RATIO:-40}
       TR_HEALTH_MIN_THREADS: ${TR_HEALTH_MIN_THREADS:-20}
+      TR_HEALTH_DECODE_WINDOW: ${TR_HEALTH_DECODE_WINDOW:-600}
 
     volumes:
       # Your settings. Mounted read-only: nothing in the container can change
@@ -63,10 +64,11 @@ services:
     stop_signal: SIGINT
 
     # --- Is it still working? -----------------------------------------------
-    # Trunk Recorder can lose its SDR and keep running: the process stays up,
-    # the container stays up, and no calls are ever recorded again. A restart
-    # policy cannot catch that, because nothing ever exits. This probe notices,
-    # and the `autoheal` service at the bottom of this file acts on it.
+    # Trunk Recorder can lose its SDR, or lose the control channel, and keep
+    # running: the process stays up, the container stays up, and no calls are
+    # ever recorded again. A restart policy cannot catch that, because nothing
+    # ever exits. This probe notices, and the `autoheal` service at the bottom
+    # of this file acts on it.
     #
     # scripts/trunk-recorder-healthcheck.sh explains what it measures and why.
     #

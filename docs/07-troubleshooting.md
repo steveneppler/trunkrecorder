@@ -89,25 +89,48 @@ usb 1-5: USB disconnect, device number 2
 usb 1-5: new high-speed USB device number 3 using xhci_hcd
 ```
 
-`restart: unless-stopped` cannot catch this. A restart policy reacts to a
-process **exiting**, and this process never exits.
+It can also lose the **control channel** and never get it back. On 2026-10-23
+the signal faded just after midnight and Trunk Recorder spent the next three
+and a half days hopping between control channel frequencies, decoding nothing,
+with every thread still running. Its log showed it plainly, every 200 seconds:
+
+```
+[gjdtrs]	853.962500 MHz	0 msg/sec
+```
+
+A restart fixed it within seconds, on the same antenna and frequencies.
+
+`restart: unless-stopped` cannot catch either of these. A restart policy
+reacts to a process **exiting**, and this process never exits.
 
 ### What now watches for it
 
 Two pieces, both in `docker-compose.yml`:
 
 - a `healthcheck:` on `trunk-recorder` that runs
-  `scripts/trunk-recorder-healthcheck.sh` once a minute. It counts Trunk
-  Recorder's threads and fails when they collapse. A working recorder has one
-  thread per GNU Radio block — 209 on this machine — and a recorder that has
-  lost its SDR has almost none. It deliberately does **not** check "has a call
-  been recorded recently", because a quiet night is not a fault.
+  `scripts/trunk-recorder-healthcheck.sh` once a minute. It fails when:
+  - Trunk Recorder's threads collapse. A working recorder has one thread per
+    GNU Radio block — 209 on this machine — and one that has lost its SDR has
+    almost none.
+  - the control channel status lines have read `0 msg/sec` for 10 minutes.
+    The control channel transmits continuously whether or not anyone is
+    talking, so a working recorder never reads 0.
+  - no status block has appeared in the log for 10 minutes. Trunk Recorder
+    writes one every 200 seconds even on a quiet radio.
+
+  It deliberately does **not** check "has a call been recorded recently",
+  because a quiet night is not a fault. The log checks read the files in
+  `logs/`, so they need `"logFile": true` in `config.json` (the default here)
+  and `logLevel` left at `info` or below; otherwise they are skipped and only
+  the thread check runs.
 - the `autoheal` service, which restarts any container whose healthcheck has
   gone unhealthy. Docker will not do this on its own: a healthcheck only sets a
   status label, and nothing acts on it.
 
-Expect recovery to take two to four minutes — three consecutive failed probes
-a minute apart, then the restart.
+Expect recovery to take two to four minutes after lost threads — three
+consecutive failed probes a minute apart, then the restart — and about fifteen
+after a lost control channel, because the probe first waits for 10 minutes of
+zeros.
 
 ### Checking on it
 
@@ -131,18 +154,25 @@ docker compose logs autoheal
 
 ### If it restarts when it should not
 
-The threshold is 40% of the highest thread count seen since the container
-started, so it adapts to your `digitalRecorders` setting rather than assuming
-this machine's numbers. If you still need to loosen it, set either of these in
-`.env`:
+`docker inspect` (above) shows which check failed.
+
+The thread threshold is 40% of the highest thread count seen since the
+container started, so it adapts to your `digitalRecorders` setting rather than
+assuming this machine's numbers. The log checks look back 10 minutes. If you
+still need to loosen either, set any of these in `.env`:
 
 ```bash
-TR_HEALTH_MIN_RATIO=25     # percent of peak; default 40
-TR_HEALTH_MIN_THREADS=12   # hard floor used before a peak is established; default 20
+TR_HEALTH_MIN_RATIO=25         # percent of peak; default 40
+TR_HEALTH_MIN_THREADS=12       # hard floor used before a peak is established; default 20
+TR_HEALTH_DECODE_WINDOW=1200   # seconds of 0 msg/sec, or no status block, before failing; default 600
 ```
 
-Then `docker compose up -d trunk-recorder`. The script explains both in its
-header comment.
+Then `docker compose up -d trunk-recorder`. The script explains all three in
+its header comment.
+
+If it keeps restarting for a lost control channel, the restarts are treating a
+symptom: your signal is marginal. See "The control channel keeps changing or
+dropping" above and [docs/01-hardware.md](01-hardware.md).
 
 ### Recovering without the Docker socket
 
