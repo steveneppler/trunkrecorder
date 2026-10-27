@@ -107,6 +107,10 @@ LOG_DIR="${TR_HEALTH_LOG_DIR:-/app/logs}"
 # process from the host when testing it.
 PID="${TR_HEALTH_PID:-1}"
 
+# The current time, as seconds since 1970. Overridable for the same reason, so
+# that a clock change can be tested without waiting for one.
+NOW="${TR_HEALTH_NOW:-}"
+
 # --- 1. Threads --------------------------------------------------------------
 
 threads=$(ls "/proc/$PID/task" 2>/dev/null | wc -l)
@@ -147,7 +151,7 @@ thread_status="$threads threads (peak $peak, threshold $threshold)"
 # /proc/stat has the boot time. The ")" split skips the process name, which is
 # allowed to contain spaces.
 
-now=$(date +%s)
+now="${NOW:-$(date +%s)}"
 boot=$(awk '/^btime/ { print $2 }' /proc/stat 2>/dev/null)
 ticks=$(sed 's/.*) //' "/proc/$PID/stat" 2>/dev/null | awk '{ print $20 }')
 hz=$(getconf CLK_TCK 2>/dev/null || echo 100)
@@ -177,7 +181,20 @@ if [ -z "$logs" ]; then
 fi
 
 newest="$LOG_DIR/$(echo "$logs" | head -n 1)"
-silent=$(( now - $(stat -c %Y "$newest" 2>/dev/null || echo "$now") ))
+written=$(stat -c %Y "$newest" 2>/dev/null || echo "$now")
+
+# Files left over from before this process started say nothing about it, and
+# they are all there is if `logFile` has since been turned off. Treating them
+# as silence would restart a working recorder every few minutes, forever.
+# Trunk Recorder logs its banner the moment it starts, so with logging on the
+# newest file is always younger than the process.
+if [ "$written" -lt "$started" ]; then
+  echo "ok: $thread_status; nothing logged since this process started"
+  echo "(logFile off?), control channel not checked"
+  exit 0
+fi
+
+silent=$(( now - written ))
 
 if [ "$silent" -gt "$WINDOW" ]; then
   echo "unhealthy: Trunk Recorder has written nothing to its log for ${silent}s"
@@ -189,14 +206,27 @@ fi
 # --- 2. Control channel decode rate ------------------------------------------
 #
 # Log timestamps are local time in the form [2026-10-23 00:13:16.008160], which
-# sorts as text, so a plain string comparison against the cutoff works. (Around
-# the autumn clock change the cutoff is an hour off for one hour, which at
-# worst delays a restart. It cannot cause one.)
+# sorts as text, so a plain string comparison against the cutoff works.
+#
+# Except across a clock change, because the timestamps carry no UTC offset. In
+# the autumn 01:00-02:00 happens twice, and for the first WINDOW seconds after
+# the clocks go back the cutoff reads 01:5x while the newest lines read 01:0x.
+# Those newest lines would be thrown away, hiding a recovery and possibly
+# restarting a recorder that is working. So while the window straddles a
+# change of offset, this check stands down. (For the rest of the repeated hour,
+# lines from the first pass through it count as recent too. That can delay a
+# restart but never cause one.)
 #
 # The process is at least WINDOW seconds old by now, so this cutoff also
 # excludes anything a previous process wrote.
 
-cutoff=$(date -d "@$(( now - WINDOW ))" '+%Y-%m-%d %H:%M:%S')
+since=$(( now - WINDOW ))
+if [ "$(date -d "@$since" +%z)" != "$(date -d "@$now" +%z)" ]; then
+  echo "ok: $thread_status; clocks changed in the last ${WINDOW}s,"
+  echo "control channel not checked"
+  exit 0
+fi
+cutoff=$(date -d "@$since" '+%Y-%m-%d %H:%M:%S')
 
 rates=$(
   for f in $logs; do
